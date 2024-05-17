@@ -53,7 +53,7 @@ const buscaTodosMunicipio = () => {
 };
 
 function removerAcentos(palavra) {
-  return palavra.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return palavra?.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function compararMunicipio(a, b) {
@@ -69,6 +69,16 @@ function compararMunicipio(a, b) {
   return 0;
 }
 
+function pegaCnesUnidade(listaUnidades, nomeUnidade) {
+  let cnes = "9999999";
+  for (unidade of listaUnidades) {
+    if (unidade.noFantasia === nomeUnidade) {
+      cnes = unidade.cnes;
+    }
+  }
+  return cnes;
+}
+
 function pegaCodigoMunicipio(municipios, municipio) {
   return Object.keys(municipios).find(
     (codigo) =>
@@ -77,36 +87,58 @@ function pegaCodigoMunicipio(municipios, municipio) {
   );
 }
 
-try {
-  const lerPlanilha = XLSX.readFile("lista_participantes.xlsx");
-  const nomePrimeiraPlanilha = lerPlanilha.SheetNames[0];
-  const planilha = lerPlanilha.Sheets[nomePrimeiraPlanilha];
+(async () => {
+  try {
+    const lerPlanilha = XLSX.readFile("lista_participantes.xlsx");
+    const nomePrimeiraPlanilha = lerPlanilha.SheetNames[0];
+    const planilha = lerPlanilha.Sheets[nomePrimeiraPlanilha];
 
-  const convertePlanilha = XLSX.utils.sheet_to_csv(planilha);
-  const linhasPlanilha = convertePlanilha
-    .split("\n")
-    .map((row) => row.split(","));
-  linhasPlanilha.sort(compararMunicipio);
-  const novaPlanilha = [];
+    const convertePlanilha = XLSX.utils.sheet_to_csv(planilha);
+    const linhasPlanilha = convertePlanilha
+      .split("\n")
+      .map((row) => row.split(","));
+    linhasPlanilha.sort(compararMunicipio);
+    const novaPlanilha = [];
 
-  buscaTodosMunicipio().then((municipios) => {
-    let municipioAtual = "";
-    let todosCnesMunicipio = null;
-    linhasPlanilha.forEach(async (linha) => {
-      const codigoMunicipio = pegaCodigoMunicipio(municipios, linha[4]);
-
-      if (municipioAtual !== linha[4]) {
-        municipioAtual = linha[4];
-        if (codigoMunicipio) {
-          todosCnesMunicipio = await buscaTodosCnesMunicipio(codigoMunicipio);
+    const municipios = await buscaTodosMunicipio();
+    let atualCodigoMunicipio = null;
+    let atualUnidade = null;
+    let todosCnesMunicipios = null;
+    for (linha of linhasPlanilha) {
+      const nomeMunicipio = removerAcentos(
+        linha[4]?.trim().toLocaleUpperCase()
+      );
+      const codigoMunicipio = pegaCodigoMunicipio(municipios, nomeMunicipio);
+      if (codigoMunicipio) {
+        //verifica se codigo do municipio é novo
+        if (atualCodigoMunicipio !== codigoMunicipio) {
+          atualCodigoMunicipio = codigoMunicipio;
+          todosCnesMunicipios = await buscaTodosCnesMunicipio(codigoMunicipio);
         }
-      }
 
-      if (todosCnesMunicipio) {
-        console.log("entrei");
+        // verifica se unidade fosse já foi inserida
+
+        // verifica se unidade é valida
+        if (linha[6] !== "OUTROS")
+          novaPlanilha?.push([
+            linha[4],
+            linha[6],
+            pegaCnesUnidade(todosCnesMunicipios, linha[6].trim()),
+          ]);
       }
-    });
-  });
-} catch (error) {
-  console.log(error);
-}
+    }
+
+    // Criar uma nova planilha
+    const workbook = XLSX.utils.book_new();
+    // Criar uma nova planilha com nome "Dados"
+    const worksheet = XLSX.utils.aoa_to_sheet(novaPlanilha);
+    // Adicionar a planilha ao workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Dados");
+    // Salvar o workbook como arquivo XLSX
+    XLSX.writeFile(workbook, "dados.xlsx", { bookSST: true });
+  } catch (error) {
+    console.log(error);
+  }
+})();
+
+console.log("Executei");
